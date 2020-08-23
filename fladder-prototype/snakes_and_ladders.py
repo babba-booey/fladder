@@ -94,8 +94,21 @@ class Game(object):
         return int(current_pos)
 
 
-players = ["alice", "daniel", "bob", "carol"]
-game_session = Game(players)
+players = {
+    "alice": {
+        "status": "not-started"
+    },
+    "bob": {
+        "status": "not-started"
+    },
+    "cindy": {
+        "status": "not-started"
+    },
+    "daniel": {
+        "status": "not-started"
+    }
+}
+game_session = Game(players.keys())
 
 cycles_passed = 0
 logger = get_logger(__name__)
@@ -104,8 +117,9 @@ try:
     # while cycles_passed < 100:
     player_cycle = cycle(players)
     current_player = next(player_cycle)
+    podium = []
     game_over = False
-    while not game_over:
+    while not game_over and len(podium) < 3:
         current_position = 0
         if cycles_passed >= 5:
             current_position = game_session.player_current_position(current_player)
@@ -119,9 +133,14 @@ try:
             blocs_moved += face
         logger.info("Player %s, total blocks moved: %s", current_player, blocs_moved)
         if current_position == 100:
-            logger.info("Player %s wins!!!!", current_player)
-            game_over = True
-            break
+            logger.info("Player %s finished game!!!!", current_player)
+            podium.append(current_player)
+            del players[current_player]
+            player_cycle = cycle(players)
+            cycles_passed += 1
+            continue
+            # game_over = True
+            # break
         current_player = next(player_cycle)
         cycles_passed += 1
 
