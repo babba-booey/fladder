@@ -6,6 +6,7 @@ import json
 from uuid import uuid4
 from redis import Redis
 from itertools import cycle
+from datetime import datetime
 
 logging.basicConfig(level=logging.DEBUG, format="[%(asctime)s] - [%(name)s] %(levelname)s - %(funcName)s - %(message)s")
 
@@ -30,7 +31,8 @@ def redis_connection(game_id):
 class Game(object):
     def __init__(self, player_names):
         game_uuid = str(uuid4())
-        self.game_id = "game-{}".format(game_uuid)
+        t_now = datetime.utcnow().strftime("%s")
+        self.game_id = "game_{uuid}_{timestamp}".format(uuid=game_uuid, timestamp=t_now)
         self.player_names = player_names
         self.logger = get_logger(self.game_id)
 
@@ -75,7 +77,7 @@ class Game(object):
                 self.logger.info("Setting player position to 1 because 6 was rolled and player was at position 0")
             else:
                 self.logger.info("Not updating player position. Currently at 0, rolled %s", die_face)
-                return
+            return
         next_player_position = current_player_position + die_face
         if next_player_position > 100:
             self.logger.info("Not updating player position. Next position %s is outside board", next_player_position)
@@ -94,57 +96,61 @@ class Game(object):
         return int(current_pos)
 
 
-players = {
-    "alice": {
-        "status": "not-started"
-    },
-    "bob": {
-        "status": "not-started"
-    },
-    "cindy": {
-        "status": "not-started"
-    },
-    "daniel": {
-        "status": "not-started"
+def start_game():
+    players = {
+        "alice": {
+            "status": "not-started"
+        },
+        "bob": {
+            "status": "not-started"
+        },
+        "cindy": {
+            "status": "not-started"
+        },
+        "daniel": {
+            "status": "not-started"
+        }
     }
-}
-game_session = Game(players.keys())
+    game_session = Game(players.keys())
 
-cycles_passed = 0
-logger = get_logger(__name__)
+    cycles_passed = 1
+    logger = get_logger(__name__)
 
-try:
-    # while cycles_passed < 100:
-    player_cycle = cycle(players)
-    current_player = next(player_cycle)
+    active_players = players.keys()
+    player_cycle = cycle(active_players)
     podium = []
-    game_over = False
-    while not game_over and len(podium) < 3:
-        current_position = 0
-        if cycles_passed >= 5:
-            current_position = game_session.player_current_position(current_player)
-        logger.info("Current player: %s, Current position: %s. Rolling dice", current_player, current_position)
-        face = game_session.roll_dice(player=current_player)
-        game_session.update_player_position(current_player, face)
-        blocs_moved = face
-        while face == 6:
-            face = game_session.roll_dice(player=current_player)
-            game_session.update_player_position(current_player, face)
-            blocs_moved += face
-        logger.info("Player %s, total blocks moved: %s", current_player, blocs_moved)
-        if current_position == 100:
-            logger.info("Player %s finished game!!!!", current_player)
-            podium.append(current_player)
-            del players[current_player]
-            player_cycle = cycle(players)
+
+    try:
+        logger.info("Players playing: %s", [x for x in players.keys()])
+        player = next(player_cycle)
+        while player and player_cycle:
+            logger.info("Current player: %s", player)
+            obtained_face = game_session.roll_dice(player=player)
+            game_session.update_player_position(player=player, die_face=obtained_face)
+            current_position = game_session.player_current_position(player=player)
+            if current_position == 100:
+                del players[player]
+                podium.append(player)
+                logger.info("Removed player %s from upcoming cycle. Players in upcoming cycle: %s", player, active_players)
+                active_players = players.keys()
+                player_cycle = cycle(active_players)
+                if len(active_players) == 1:
+                    logger.info("No more competitors. Losing player: %s", active_players)
+                    break
+            player = next(player_cycle)
             cycles_passed += 1
-            continue
-            # game_over = True
-            # break
-        current_player = next(player_cycle)
-        cycles_passed += 1
+
+    except KeyboardInterrupt:
+        logger.warning("Received keypress")
+        logger.info("Cycles passed: %s", cycles_passed)
 
 
-except KeyboardInterrupt:
-    logger.warning("Received keypress")
-    logger.info("Cycles passed: %s", cycles_passed)
+    except Exception as exp:
+        logger.exception("An error occured: %s", exp)
+
+    logger.info("Game over. Cycles passed: %s", cycles_passed)
+    logger.info("Podium: %s", podium)
+
+
+if __name__ == "__main__":
+    start_game()
